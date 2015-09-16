@@ -1,0 +1,494 @@
+program Runespan;
+{$DEFINE SRLCOMPATIBILITY}
+{$I SRL-6/SRL.simba}
+{$include_once ogLib/lib/core/core.Simba}
+
+ const
+ REVISION = 1.0;
+
+
+
+
+ {                     *Floor Level*
+ }
+
+ FLOOR_LEVEL = 1;
+
+ {                   *Micro Breaking*
+       Each break lasts between 10 and 30 seconds
+        TAKE_MICRO_BREAK_EVERY calls for minutes.
+              Randomizes between +/-5 minutes
+ }
+
+ TAKE_MICRO_BREAKS = false;
+ TAKE_MICRO_BREAK_EVERY = 15;
+
+
+ {                       *Failsafes*
+      Teleports and terminates at certain health percent
+              TERMINATE_AFTER calls for minutes.
+               Randomizes between +/-5 minutes
+ }
+
+  TERMINATE_AT_LEVEL = 99;
+  TERMINATE_AFTER = 999;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var
+  tries, breaksTaken, startXp, playerModelID, currentlevel, xpRemaining, xPGained, levelUpStartXP: integer;
+  center:TPoint;
+  terminateTimer, microBreakCountDown: tCountDown;
+
+{Mayor's Procedure}
+procedure getUpdate();
+var
+  newFile: Integer;
+  newRev: Extended;
+begin
+  newRev := strToFloat(getPage('http://tomstewart.net/proxy.php?url=https://raw.githubusercontent.com/SRLRoss/Runespan/master/version.txt'));
+
+  if newRev > REVISION then
+  begin
+    writeln('Updating from revision ' + toStr(REVISION) + ' to revision ' + toStr(newRev));
+    newFile := rewriteFile(scriptPath + 'Ross'' Runespan v' + toStr(newRev) + '.simba', false);
+    writeFileString(newFile, getPage('http://tomstewart.net/proxy.php?url=https://raw.githubusercontent.com/SRLRoss/AIO-Woodcutting/master/Runespan.simba'));
+    closeFile(newFile);
+    writeln('Please open the new file.');
+    terminateScript();
+  end
+  else
+    writeln('Script is up-to-date.');
+end;
+
+function tOGL.getFormattedTime(time: uint32): string;
+var
+  h, m, s: integer;
+begin
+  s := time mod 3600000 mod 60000 div 1000;
+  m := time mod 3600000 div 60000;
+  h := time div 3600000;
+  result:= (toStr(h) + 'h ' + toStr(m) + 'm ' + toStr(s) + 's');
+end;
+
+function tMainscreen.getXP(skill: string): integer;
+var
+  i, skillID: uint32;
+  skillTextures: glTextureArray;
+  skillBoxTexture: glTexture;
+  skillBox: TBox;
+begin
+  case lowercase(skill) of
+    'attack': skillID := 16918;
+    'strength': skillID := 39319;
+    'defence': skillID := 41952;
+    'range': skillID := 20999;
+    'magic': skillID := 51211;
+    'constitution': skillID := 38262;
+    'thieving': skillID := 25506;
+    'crafting': skillID := 33559;
+    'fletching': skillID := 19315;
+    'mining': skillID := 16653;
+    'smithing': skillID := 31773;
+    'fishing': skillID := 54626;
+    'runecrafting': skillID := 33877;
+    'slayer': skillID := 64733;
+    'farming': skillID := 34536;
+    'construction': skillID := 54189;
+    'hunter': skillID := 30306;
+    'summoning': skillID := 37582;
+    'prayer': skillID := 23912;
+    'agility': skillID := 29580;
+    'herblore': skillID := 54427;
+    'cooking': skillID := 47376;
+    'firemaking': skillID := 46008;
+    'woodcutting': skillID := 44243;
+    'dungeoneering': skillID := 58390;
+    'divination': skillID := 22933;
+    'combat': skillID := 31110;
+    'overall': skillID := 48705;
+  end;
+  skillTextures:=ogl.getTextures(skillID);
+  if skillTextures.isEmpty() then
+    exit(result-1);
+  skillBoxTexture:=skillTextures[low(skillTextures)];
+  skillBox:=skillBoxTexture.bounds.adjustPosition(-150, 0, 0, 0);
+  result := explode('+', ogl.getChars(skillBox).toString())[0].parseInt();
+end;
+
+procedure progressReport(status: string);
+var
+  i, x, y: integer;
+  currentXp, currentXPRemaining: uint32;
+  paintXp, xpHour :integer;
+  time: string;
+  reportStrings: TStringArray;
+begin
+  currentXp := tmainscreen.getXP('overall');
+  paintXp := currentXp - startXp;
+  xpGained:= currentXP - levelUpStartXP;
+  currentXPRemaining:=XpRemaining - xpGained;
+  xpHour := round(paintXp * (3600.0 / (getTimeRunning / 1000.0)));
+  time:=togl.getFormattedTime(getTimeRunning());
+  x:=12;
+  y:=190;
+  reportStrings:=[toStr(paintXp) + ' xp gained', toStr(xpHour) + ' xp/hr', 'Current Level: ' + toStr(currentLevel), 'Experience until next level: ' + toStr(currentXPRemaining),'Status: ' + status, 'Time Running: ' + time, 'Time until next micro break: ' + tOgl.getFormattedTime(microBreakCountdown.timeRemaining()), 'Breaks Taken: ' + toStr(breaksTaken)];
+  smart.__graphics.clear;
+  for i:= 0 to high(reportStrings) do
+  begin
+    if (i >= (high(reportStrings)-1)) and (not TAKE_MICRO_BREAKS) then
+      continue
+    else
+    begin
+      smart.__graphics.DrawText(reportStrings[i], 'smallChars', point(x+1, y+1), 1);
+      smart.__graphics.DrawText(reportStrings[i], 'smallChars', point(x-1, y-1), 1);
+      smart.__graphics.DrawText(reportStrings[i], 'smallChars', point(x-1, y+1), 1);
+      smart.__graphics.DrawText(reportStrings[i], 'smallChars', point(x+1, y-1), 1);
+      smart.__graphics.DrawText(reportStrings[i], 'smallChars', point(x, y), clWhite);
+      incEx(y, 18);
+    end;
+  end;
+end;
+
+function getTPA: TPointArray;
+var
+  x, y: integer;
+  TPA, TPA2: TPointArray;
+  ATPA: T2DPointArray;
+begin
+  case FLOOR_LEVEL of
+    1:findColorsSpiralTolerance(x, y, TPA, 3180678, mainscreen.getBounds(), 12, colorSetting(2, 0.19, 0.63));
+    2:findColorsSpiralTolerance(x, y, TPA, 8355920, mainscreen.getBounds(), 11, colorSetting(2, 4.55, 0.14));
+    3:findColorsSpiralTolerance(x, y, TPA, 8487851, mainscreen.getBounds(), 7, colorSetting(2, 0.14, 0.74));
+  end;
+  ATPA:= tpa.cluster(10);
+  atpa.filterBetween(0, 5000);
+  ATPA.sortFromMidPoint(center);
+  if length(ATPA) < 1 then
+  begin
+    writeln('Couldn''t find the floor, please ensure you have the correct floor specified in settings.');
+    terminateScript;
+  end;
+  TPA:=atpa[0];
+  TPA:=tpa.ConvexHull();
+  result:=TPA;
+end;
+
+function isAnimating: boolean;
+begin
+  result := ogl.getModels(playerModelID).isEmpty();
+end;
+
+function getPlayerModelID(): uint32;
+var
+  playerBox: TBox;
+  pModel: glModelArray;
+begin
+  playerBox:=intToBox(center.x-20, center.y-25, center.x+20, center.y+25);
+  pModel:=ogl.getModels(playerBox);
+  result:=pModel[high(pModel)].id;
+end;
+
+function hasEssence(): boolean;
+begin
+  result:= (tinventory.getItems([140250], [2302497]).indexes());
+end;
+
+procedure grabEssence;
+var
+  floatingEssence: glModelArray;
+  timer: tCountDown;
+begin
+  floatingEssence:= ogl.getModels(2851238448);
+  if (floatingEssence.indexes()) and (center.closest(floatingEssence)[0].isInPoly(getTPA)) then
+  begin
+    if tmouse.rightClickOption(center.closest(floatingEssence)[0].randomizePointEllipse(7), 'Collect', 850) then
+    begin
+      timer.setTime(randomRange(5000, 6000));
+      while (not timer.isFinished()) do
+      begin
+        wait(250);
+        if (hasEssence()) then
+          exit;
+      end;
+    end
+    else
+      wait(randomRange(850, 1500));
+  end
+  else if (floatingEssence.indexes()) and (floatingEssence[0].x < (ogl.getClientHeight / 2)) then
+    tminimap.setDegrees(tminimap.getDegrees() + random(10, 40))
+  else
+    tminimap.setDegrees(tminimap.getDegrees() - random(10, 40));
+end;
+
+procedure waitMoving();
+var
+  player: TPoint;
+begin
+  player := tminimap.getLocalPosition();
+  wait(randomRange(1250, 1500));
+  while (tminimap.getLocalPosition().x <> player.x) or (tminimap.getLocalPosition().y <> player.y) do
+  begin
+    player := tminimap.getLocalPosition();
+    if isAnimating() then
+      exit;
+    wait(randomRange(1500, 1750));
+  end;
+end;
+
+procedure waitHarvesting();
+var
+  startXP: integer;
+  timer: TCountDown;
+begin
+  startXp:= tmainscreen.getXP('overall');
+  waitMoving();
+  timer.setTime(random(1000, 1500));
+  while not timer.isFinished() do
+  begin
+    if isAnimating then
+      timer.setTime(random(500, 750));
+    if tmainscreen.getXP('overall') <> startXP then
+    begin
+      progressReport('Siphoning.');
+      startXp:= tmainscreen.getXP('overall');
+    end;
+    wait(250);
+  end;
+end;
+
+function getNode(): glModelArray;
+var
+  nodeArray: glModelArray;
+  node2DArray: T2DCardinalArray;
+  i, j: integer;
+begin
+  node2DArray:= [[95,	3400103031],[90,	4055789841],[83,	1895117757],[77,	2566560352],[65,	1304649452],[54,	1966863770],[44,	2929715345],[40,	1874237583],[35,	3134921782],[27,	2540932725],[20,	3944672517] ,[17,	3038814969],[14,	1987809829],[9,	2209432848],[5,	2565328269],[1,	3343889926],[1,	1312347107]];
+  for i := 0 to high(node2DArray) do
+  begin
+    if (currentLevel >= (node2DArray[i][0])) then
+    begin
+      nodeArray := ogl.getModels(node2DArray[i][1]);
+      if (not nodeArray.isEmpty()) then
+      begin
+        nodeArray:=center.closest(nodeArray);
+        for j := 0 to high(nodeArray) do
+        begin
+          if (nodeArray[j].isInPoly(getTPA())) then
+          begin
+            result:=result+nodeArray[j];
+            exit(result);
+          end;
+        end;
+      end
+    end;
+  end;
+end;
+
+function getCreature(): glModelArray;
+var
+  creatureIDArray: T2DIntegerArray;
+  creatureArray: glModelArray;
+  creatureDataArray: array of array of variant;
+  i, j: integer;
+begin
+  creatureDataArray:= [[90, 'Soul'],[77, 'Blood'],[65, 'Death'],[54, 'Law'],[44, 'Nature'],[40, 'Astral'],[35, 'Chaos'],[27, 'Cosmic'],[20, 'Body'] ,[14, 'Fire'],[9, 'Earth'],[5, 'Water'],[1, 'Mind'],[1, 'Air']];
+  creatureIDArray:=[[1218560579],[4009427976],[2533163227],[765377918],[3244062378],[855680682],[40555142],[765377918],[855680682],[4225368459, 4127887084],[4225368459, 4127887084],[4225368459, 4127887084],[4225368459, 4127887084],[1252751151, 3039914149]];
+  for i := 0 to high(creatureDataArray) do
+  begin
+    if (currentLevel >= (creatureDataArray[i][0])) then
+    begin
+      creatureArray := ogl.getModels(creatureIDArray[i]);
+      if (not creatureArray.isEmpty()) then
+      begin
+        creatureArray:=center.closest(creatureArray);
+        for j := 0 to high(creatureArray) do
+        begin
+          if (creatureArray[j].isInPoly(getTPA())) then
+          begin
+            tmouse.move(creatureArray[j].toPoint());
+            if isMouseOverText([creatureDataArray[i][1]]) then
+            begin
+              result:=result+creatureArray[j];
+              exit(result);
+            end;
+          end;
+          if j > 1 then
+            wait(randomRange(100, 300));
+        end;
+      end
+    end;
+  end;
+end;
+
+function siphon(): boolean;
+var
+  objectToSiphon: glModelArray;
+begin
+  if (tries < 2) {or (FLOOR_LEVEL = 1)} then
+    objectToSiphon:= getNode()
+  else
+    objectToSiphon:= getCreature();
+  if (not objectToSiphon.isEmpty()) then
+  begin
+    if tmouse.rightClickOption(objectToSiphon[0].randomizePointEllipse(10), 'Siphon', 850) then
+    begin
+      tries:=0;
+      exit(true);
+    end
+    else
+    begin
+      tminimap.setDegrees(tminimap.getDegrees() - random(10, 40));
+      wait(randomRange(850, 1500));
+    end;
+  end
+  else if tries > 5 then
+    wait(randomRange(500, 1250))
+  else if (not objectToSiphon.isEmpty() and (objectToSiphon[0].x < (center.x/2))) then
+    tminimap.setDegrees(tminimap.getDegrees() + random(90, 180))
+  else
+    tminimap.setDegrees(tminimap.getDegrees() - random(90, 180));
+  inc(tries);
+  exit(false);
+end;
+
+procedure setMicroBreak;
+begin
+  microBreakCountdown.setTime((TAKE_MICRO_BREAK_EVERY * 60000) + (randomRange(-300000, 300000)));
+end;
+
+procedure takeMicroBreak;
+var
+  breakTime: tCountDown;
+begin
+  if not (TAKE_MICRO_BREAKS and microBreakCountdown.isFinished()) then
+    exit;
+  breakTime.setTime(randomRange(10000, 30000));
+  inc(breaksTaken);
+  while (not breaktime.isFinished()) do
+  begin
+    progressReport('Taking break for ' + toStr(round(breakTime.timeRemaining()/1000)) + ' more seconds.');
+    wait(1000);
+  end;
+  setMicroBreak;
+end;
+
+procedure handleSkills;
+begin
+  tabstats.open();
+  currentLevel:=tabstats.getSkillLevel(SKILL_RUNECRAFTING);
+  XPRemaining:=tabStats.getSkillInfo(SKILL_RUNECRAFTING, INFO_REMAINDER);
+  levelUpStartXP:=tmainscreen.getXP('overall');
+  tabBackpack.open();
+end;
+
+procedure checkTerminate;
+begin
+  if currentLevel=TERMINATE_AT_LEVEL then
+  begin
+    writeln('Reached level ' + toStr(TERMINATE_AT_LEVEL) + ', terminating script.');
+    terminateScript;
+  end;
+  if (terminateTimer.isFinished()) then
+  begin
+    writeln('Time failsafe is up, terminating.');
+    terminateScript;
+  end;
+end;
+
+procedure mainLoop;
+begin
+  repeat
+    progressReport('Finding something to siphon.');;
+    if (not hasEssence()) then
+      grabEssence;
+    if siphon() then
+      waitHarvesting;
+    if (XPGained>levelUpStartXP) or (random(100) = 1) then
+      handleSkills;
+    checkTerminate;
+    takeMicroBreak;
+    mainscreen.setAngle(MS_ANGLE_HIGH);
+  until(false);
+end;
+
+procedure initialSetup;
+begin
+  center:=mainscreen.getCenterPoint();
+  disableSRLDebug:=true;
+  terminateTimer.setTime((TERMINATE_AFTER * 60000) + (randomRange(-300000, 300000)));
+  writeln('Terminating in: ' + tOGL.getFormattedTime(terminateTimer.timeRemaining()));
+  if TAKE_MICRO_BREAKS then
+    setMicroBreak;
+  startXP:=tmainscreen.getXP('overall');
+  playerModelID:=getPlayerModelID;
+  handleSkills;
+end;
+
+begin
+  getUpdate;
+  ogl.setup();
+  disableSRLDebug:=true;
+  if (not isLoggedIn()) then
+  begin
+    writeln('Not logged into game.');
+    terminateScript;
+  end;
+  glxViewPort(mainscreen.getBounds().x1,mainscreen.getBounds().y1,mainscreen.getBounds().x2,mainscreen.getBounds().y2);
+  ogl.setDebugMode('n');
+  initialSetup;
+  mainloop;
+end.
