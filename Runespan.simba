@@ -105,7 +105,7 @@ begin
   begin
     writeln('Updating from revision ' + toStr(REVISION) + ' to revision ' + toStr(newRev));
     newFile := rewriteFile(scriptPath + 'Ross'' Runespan v' + toStr(newRev) + '.simba', false);
-    writeFileString(newFile, getPage('http://tomstewart.net/proxy.php?url=https://raw.githubusercontent.com/SRLRoss/AIO-Woodcutting/master/Runespan.simba'));
+    writeFileString(newFile, getPage('http://tomstewart.net/proxy.php?url=https://raw.githubusercontent.com/SRLRoss/Runespan/master/Runespan.simba'));
     closeFile(newFile);
     writeln('Please open the new file.');
     terminateScript();
