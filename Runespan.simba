@@ -4,7 +4,7 @@ program Runespan;
 {$include_once ogLib/lib/core/core.Simba}
 
  const
- REVISION = 1.0;
+ REVISION = 1.1;
 
 
 
@@ -169,6 +169,42 @@ begin
   result := explode('+', ogl.getChars(skillBox).toString())[0].parseInt();
 end;
 
+{slacky's}
+function TPointArray.ConvexHullOverride(): TPointArray;
+var
+  pts: TPointArray;
+  h,i,k,u: Int32;
+  function CrossProd(r, p, q: TPoint): Int32;
+  begin //cross-product of rp and rq vectors.
+    Result := (p.x-r.x) * (q.y-r.y) - (p.y-r.y) * (q.x-r.x);
+  end;
+begin
+  if High(self) <= 2 then Exit(self);
+  pts := System.Copy(self);
+  SortTPAByX(pts,True);
+
+  H := High(pts);
+  SetLength(result, 2 * (h+1));
+
+  for i:=0 to h do
+  begin
+    while (k >= 2) and (CrossProd(result[k-2], result[k-1], pts[i]) <= 0) do
+      Dec(k);
+    result[k] := pts[i];
+    Inc(k)
+  end;
+
+  u := k+1;
+  for i:=h-1 downto 0 do
+  begin
+    while (k >= u) and (CrossProd(result[k-2], result[k-1], pts[i]) <= 0) do
+      Dec(k);
+    result[k] := pts[i];
+    Inc(k);
+  end;
+  SetLength(result, k-1);
+end;
+
 procedure progressReport(status: string);
 var
   i, x, y: integer;
@@ -223,7 +259,7 @@ begin
     terminateScript;
   end;
   TPA:=atpa[0];
-  TPA:=tpa.ConvexHull();
+  TPA:=tpa.ConvexHullOverride();
   result:=TPA;
 end;
 
@@ -427,10 +463,23 @@ begin
 end;
 
 procedure handleSkills;
+var
+  tries: integer;
 begin
   tabstats.open();
-  currentLevel:=tabstats.getSkillLevel(SKILL_RUNECRAFTING);
   XPRemaining:=tabStats.getSkillInfo(SKILL_RUNECRAFTING, INFO_REMAINDER);
+  while tries < 3 do
+  begin
+    if XPRemaining > 4200000000 then
+    begin
+      tabStats.getSkillInfo(random(0, 17), INFO_REMAINDER);
+      inc(tries);
+      XPRemaining:=tabStats.getSkillInfo(SKILL_RUNECRAFTING, INFO_REMAINDER);
+    end
+    else
+      break;
+  end;
+  currentLevel:=tabstats.getSkillLevel(SKILL_RUNECRAFTING);
   levelUpStartXP:=tmainscreen.getXP('overall');
   tabBackpack.open();
 end;
